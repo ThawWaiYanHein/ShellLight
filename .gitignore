@@ -1,0 +1,35 @@
+node_modules/
+dist/
+release/
+*.log
+.smoke-data/
+
+# Local credentials and connection data must never be published.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.ppk
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+id_ecdsa*
+.ssh/
+.aws/
+connections.json
+connections.json.*
+trusted-hosts.json
+known_hosts*
+*.bak
+*.dmp
+
+# Personal editor and agent state.
+.vscode/
+.idea/
+.codex/
+.agents/
+.DS_Store
+Thumbs.db
+Desktop.ini
