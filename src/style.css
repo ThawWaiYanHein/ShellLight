@@ -3,3 +3,62 @@
 
 .agent-panel{margin-top:14px;padding:14px;background:#f0f6f2;border:1px solid #dce9df;border-radius:8px}.agent-panel strong{font-size:12px;color:#365d45}.agent-panel p{font-size:11px;line-height:1.7;color:#718777;margin:7px 0 11px}.agent-actions{display:flex;gap:7px;flex-wrap:wrap;align-items:center}.agent-actions>span{font-size:10px;color:#587c62;width:100%}.agent-panel small{display:block;font-size:9px;line-height:1.7;color:#809386;margin-top:11px}
 .remember-option{display:flex!important;align-items:center;gap:9px}.remember-option input{width:auto;margin:0}.session-screen{height:100vh;display:flex;flex-direction:column;background:#13251e}.session-bar{display:flex;justify-content:space-between;color:#b6d5c2;padding:13px 18px;font-size:12px;border-bottom:1px solid #31503f}.session-terminal{flex:1;min-height:0;padding:12px}.session-terminal .xterm{height:100%}
+.content-hidden{display:none}.open-sessions-nav{min-height:48px;display:flex;align-items:center;gap:8px;padding:7px 16px;background:#eef3ef;border-bottom:1px solid #e1e9e3;overflow-x:auto}.open-sessions-label{font-size:8px;letter-spacing:1.1px;color:#829186;white-space:nowrap;margin-right:3px}.open-session{display:flex;align-items:center;gap:7px;background:#fff;border:1px solid #e0e8e2;border-radius:6px;padding:6px 9px;max-width:235px;color:#586a5e;white-space:nowrap}.open-session.selected{background:#e1eee5;border-color:#bcd3c2;color:#316b4c}.open-session>span:nth-of-type(1){font-size:10px;overflow:hidden;text-overflow:ellipsis}.open-session small{font-size:8px;color:#96a397}.open-session .dot{width:6px;height:6px}.session-tab-close{color:#9aaba0;font-size:16px;padding:0 3px}.session-return{margin-left:auto;white-space:nowrap}.terminal-workspace{height:calc(100vh - 120px);min-height:0;display:flex;flex-direction:column;background:#13251e;position:relative;overflow:hidden}.terminal-workspace-hidden{display:none}.terminal-host{position:absolute;inset:0;min-height:0}.terminal-host-hidden{visibility:hidden;pointer-events:none}.terminal-workspace .session-screen{height:100%;min-height:0}.terminal-workspace .session-terminal{height:100%;min-height:0;padding:12px;display:flex;flex-direction:column}.terminal-viewport{flex:1;min-height:0;width:100%}.terminal-bottom-space{height:clamp(96px,16vh,160px);flex:0 0 clamp(96px,16vh,160px);background:#13251e}
+
+/* Constrain scrolling only while an SSH terminal is active. */
+body.terminal-open{height:100vh;overflow:hidden}
+.app.terminal-open{height:100vh;min-height:0;overflow:hidden}
+.app.terminal-open main{height:100vh;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.app.terminal-open header{flex:0 0 72px}
+.app.terminal-open .open-sessions-nav{flex:0 0 auto}
+.app.terminal-open .terminal-workspace{flex:1;height:auto;min-height:0}
+.app.terminal-open .terminal-workspace .session-terminal{height:100%;min-height:0;padding:12px;background:#13251e}
+.app.terminal-open .terminal-workspace .session-terminal .xterm{height:100%;background:#13251e}
+
+/* Keep the app shell fixed to the window while xterm owns terminal scrolling. */
+html.terminal-open,body.terminal-open,#root:has(.app.terminal-open){height:100%;min-height:0;overflow:hidden}
+.app.terminal-open main{flex:1;min-width:0}
+.app.terminal-open .open-sessions-nav{overflow:hidden}
+.app.terminal-open .terminal-workspace{overflow:hidden}
+.app.terminal-open .terminal-host,.app.terminal-open .terminal-workspace .session-screen{height:100%;min-height:0;background:#13251e}
+.app.terminal-open .terminal-workspace .session-terminal{overflow:hidden}
+.app.terminal-open .terminal-workspace .session-terminal{height:100%!important;min-height:0;flex:1 1 auto;align-self:stretch}
+.app.terminal-open .terminal-workspace .session-terminal .xterm{height:100%;flex:1 1 auto}
+.app.terminal-open .xterm-viewport{background-color:#13251e!important}
+.app.terminal-open{scrollbar-width:none}
+.app.terminal-open::-webkit-scrollbar,html.terminal-open::-webkit-scrollbar,body.terminal-open::-webkit-scrollbar{display:none}
+.app.terminal-open .terminal-workspace,
+.app.terminal-open .terminal-host,
+.app.terminal-open .session-screen,
+.app.terminal-open .session-terminal,
+.app.terminal-open .xterm,
+.app.terminal-open .xterm-viewport{background:#000!important}
+.app.terminal-open .xterm-viewport{scrollbar-color:#3b4840 #000;scrollbar-width:thin}
+.app.terminal-open .xterm-viewport::-webkit-scrollbar{width:12px;background:#000}
+.app.terminal-open .xterm-viewport::-webkit-scrollbar-track{background:#000}
+.app.terminal-open .xterm-viewport::-webkit-scrollbar-thumb{background:#3b4840;border:2px solid #000;border-radius:6px}
+.app.terminal-open .xterm-viewport::-webkit-scrollbar-button{display:none;background:#000}
+
+/* App-wide dark theme */
+:root{color-scheme:dark;background:#080a09;color:#e2e9e4}
+body,#root,.app,main{background:#080a09;color:#e2e9e4}
+.sidebar,header{background:#0e1210;border-color:#242d27}
+.brand small,.sidebar-bottom p,.sidebar-bottom>span,header,.page-heading p,.host,.connection-details,.open-sessions-label,.open-session small,.section-label>span,footer,.empty-foot{color:#93a198}
+.workspace,.card,.stats>div,.empty,.search,.secondary,.modal{background:#111714;border-color:#28342d;color:#dce5df}
+.workspace,.workspace small,.workspace>svg{color:#9daaa1}
+.nav{color:#a8b4ac}.nav:hover,.nav.active{background:#1a2820;color:#cce6d3}
+.nav>span,.section-label h2 span{background:#202a24;color:#a7b5ab}
+.add-env,.icon-button{color:#a0afa4}.icon-button:hover{background:#202a24;color:#d1e4d6}
+.page-heading p,.stat-icon+div>span,.stats div div>span,.host,.connection-details,.form-note,.delete-message,.modal label small{color:#a2afa5}
+.stats>div{box-shadow:none}.stat-icon{background:#183326;color:#83c594}.blue-tint{background:#1a2638;color:#8eafe0}.amber-tint{background:#332a18;color:#d8b65f}
+.card{box-shadow:0 2px 8px #0005}.card:hover{box-shadow:0 6px 18px #0008}
+.green{--tint:#173224}.blue{--tint:#19263a}.amber{--tint:#332a18}.purple{--tint:#2a2036}.red{--tint:#351f1e}
+.toolbar .search{background:#111714;border-color:#28342d}.search input{color:#e2e9e4}.search input::placeholder{color:#849188}
+.secondary{background:#151c18;border-color:#303b34;color:#c0cdc4}.secondary:hover{background:#202a24}
+.connect{background:#173224;border-color:#294a35;color:#a9d4b5}.connect:hover{background:#203d2c}
+.primary{background:#236a50;color:#f2fff6}.primary:hover{background:#2b805f}
+.modal{box-shadow:0 20px 80px #000a}.modal-heading,.modal-actions{border-color:#28342d}.modal label{color:#c2cec5}.modal input,.modal select{background:#0a0e0c;border-color:#303b34;color:#e2e9e4}.modal input::placeholder{color:#748078}
+.agent-panel{background:#151e18;border-color:#2b3b30}.agent-panel strong{color:#afd6b8}.agent-panel p,.agent-panel small{color:#a0afa4}.agent-actions>span{color:#abd3b2}
+.overlay{background:#000a}.color-choice{filter:brightness(.8)}
+.open-sessions-nav{background:#101512;border-color:#242d27}.open-session{background:#161e19;border-color:#303d34;color:#c5d1c8}.open-session.selected{background:#1c3023;border-color:#385c43;color:#d4efdc}.session-tab-close{color:#9baa9f}
+footer{color:#95a39a}.error{background:#321d1b;border-color:#70403a;color:#f0b5aa}.toast{background:#1d4935;color:#e1f4e6}

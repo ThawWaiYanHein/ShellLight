@@ -10,9 +10,6 @@ function preload(file) {
   });
   return Object.keys(api).sort();
 }
-test('terminal preload exposes only session operations', () => {
-  assert.deepEqual(preload('session-preload.cjs'), ['onSession', 'sessionInput', 'sessionResize', 'sessionStart']);
-});
-test('management preload cannot control terminal streams', () => {
-  assert.deepEqual(preload('preload.cjs'), ['agentStatus', 'connect', 'importSSH', 'load', 'pickKey', 'save', 'setupAgent', 'unlockKey']);
+test('management preload exposes local session controls alongside the manager API', () => {
+  assert.deepEqual(preload('preload.cjs'), ['agentStatus', 'connect', 'importSSH', 'load', 'onSession', 'openVSCode', 'pickKey', 'save', 'sessionClose', 'sessionCopy', 'sessionInput', 'sessionOutputAck', 'sessionPaste', 'sessionResize', 'sessionStart', 'setupAgent', 'unlockKey']);
 });

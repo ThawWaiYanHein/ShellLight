@@ -1,6 +1,6 @@
 {
   "name": "shelllight",
-  "version": "1.1.2",
+  "version": "1.2.4",
   "private": true,
   "license": "MIT",
   "description": "Your environments. One click away.",
@@ -20,8 +20,9 @@
       "electron/**/*",
       "package.json"
     ],
+    "npmRebuild": false,
     "directories": {
-      "output": "release/shelllight-1.1.2"
+      "output": "release/shelllight-1.2.4"
     },
     "win": {
       "target": "portable"
@@ -30,8 +31,10 @@
   "dependencies": {
     "@napi-rs/keyring": "^2.1.2",
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "lucide-react": "^0.468.0",
+    "node-pty": "^1.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "ssh2": "^1.17.0"

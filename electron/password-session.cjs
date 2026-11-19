@@ -4,6 +4,7 @@ function connectPassword(c, password, hostVerifier, events) {
   let stream;
   client.on('ready', () => {
     password = undefined;
+    client.setNoDelay(true);
     client.shell({ term: 'xterm-256color', cols: 100, rows: 30 }, (err, channel) => {
       if (err) { events.error(err.message); client.end(); return; }
       stream = channel;
@@ -19,6 +20,8 @@ function connectPassword(c, password, hostVerifier, events) {
   return {
     input: data => stream?.write(data),
     resize: (cols, rows) => stream?.setWindow(rows, cols, 0, 0),
+    pause: () => stream?.pause(),
+    resume: () => stream?.resume(),
     close: () => client.destroy(),
   };
 }

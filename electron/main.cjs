@@ -1,15 +1,17 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const { spawn } = require('node:child_process');
+const { randomUUID } = require('node:crypto');
+const pty = require('node-pty');
 const { pathToFileURL } = require('node:url');
 const { createIpcSecurity } = require('./ipc-security.cjs');
-const { sshLaunchPlan } = require('./windows-tools.cjs');
+const { windowsTools } = require('./windows-tools.cjs');
 const { validateConnection, sshArgs, parseConfig, expandHome } = require('./ssh.cjs');
 const agent = require('./agent.cjs');
 const passwords = require('./passwords.cjs');
 const { connectPassword } = require('./password-session.cjs');
+const { openInVSCode } = require('./vscode.cjs');
 const sessions = new Map();
 const ipc = createIpcSecurity(ipcMain);
 const applicationURL = pathToFileURL(path.join(__dirname, '../dist/index.html')).href;
@@ -35,13 +37,6 @@ function validateState(data) {
     connectionIds.add(c.id);
   }
   return { version: 1, environments: data.environments, connections: data.connections };
-}
-function launch(command, args) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { detached: true, stdio: 'ignore', shell: false, windowsHide: false });
-    child.once('error', reject);
-    child.once('spawn', () => { child.unref(); resolve(); });
-  });
 }
 app.whenReady().then(async () => {
   try { state = validateState(JSON.parse(await fs.readFile(settingsPath(), 'utf8'))); }
@@ -71,20 +66,75 @@ app.whenReady().then(async () => {
     saveQueue = operation;
     return operation;
   });
-  ipc.handle('session-input', 'terminal', (event, data) => {
-    if (typeof data === 'string' && data.length <= 1048576) sessions.get(event.sender.id)?.client?.input(data);
+  ipc.listen('session-input', 'manager', (event, id, data) => {
+    const session = sessions.get(id);
+    if (session?.owner !== event.sender.id || typeof data !== 'string' || data.length > 1048576) return;
+    if (session.client) session.client.input(data); else session.process?.write(data);
   });
-  ipc.handle('session-resize', 'terminal', (event, cols, rows) => {
-    if (Number.isInteger(cols) && Number.isInteger(rows) && cols > 0 && rows > 0 && cols < 1000 && rows < 1000) sessions.get(event.sender.id)?.client?.resize(cols, rows);
+  ipc.handle('session-paste', 'manager', async (event, id) => {
+    const session = sessions.get(id);
+    if (!session || session.owner !== event.sender.id) return;
+    const text = await clipboard.readText();
+    if (text.length > 1048576) throw new Error('Clipboard text is too large to paste into a terminal session.');
+    return text;
   });
-  ipc.handle('session-start', 'terminal', async event => {
-    const session = sessions.get(event.sender.id);
-    if (!session || session.started) return;
+  ipc.handle('session-copy', 'manager', async (event, id, text) => {
+    const session = sessions.get(id);
+    if (!session || session.owner !== event.sender.id || typeof text !== 'string' || text.length > 1048576) return;
+    await clipboard.writeText(text);
+  });
+  ipc.listen('session-output-ack', 'manager', (event, id, size) => {
+    const session = sessions.get(id);
+    if (!session || session.owner !== event.sender.id || !Number.isInteger(size) || size < 0 || size > 67108864) return;
+    session.unackedOutput = Math.max(0, (session.unackedOutput || 0) - size);
+    if (session.outputPaused && session.unackedOutput < 65536) {
+      session.outputPaused = false;
+      session.client?.resume();
+      session.process?.resume();
+    }
+  });
+  ipc.handle('session-resize', 'manager', (event, id, cols, rows) => {
+    const session = sessions.get(id);
+    if (session?.owner !== event.sender.id || !Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1 || cols >= 1000 || rows >= 1000) return;
+    if (session.client) session.client.resize(cols, rows); else session.process?.resize(cols, rows);
+  });
+  ipc.handle('session-close', 'manager', (event, id) => {
+    const session = sessions.get(id);
+    if (!session || session.owner !== event.sender.id) return;
+    session.client?.close();
+    session.flushOutput?.();
+    session.process?.kill();
+    sessions.delete(id);
+  });
+  ipc.handle('session-start', 'manager', async (event, id) => {
+    const session = sessions.get(id);
+    if (!session || session.owner !== event.sender.id || session.started) return;
     session.started = true;
     const c = session.connection;
+    const send = payload => { if (!event.sender.isDestroyed()) event.sender.send('session-event', id, payload); };
+    let pendingOutput = [];
+    let outputImmediate;
+    const flushOutput = () => {
+      if (outputImmediate) clearImmediate(outputImmediate);
+      outputImmediate = null;
+      if (!pendingOutput.length) return;
+      const output = pendingOutput;
+      pendingOutput = [];
+      const data = output.every(chunk => typeof chunk === 'string') ? output.join('') : Buffer.concat(output.map(chunk => Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      const size = typeof data === 'string' ? Buffer.byteLength(data) : data.length;
+      session.unackedOutput = (session.unackedOutput || 0) + size;
+      send({ type: 'data', data, size });
+      if (session.unackedOutput > 524288 && !session.outputPaused) {
+        session.outputPaused = true;
+        session.client?.pause();
+        session.process?.pause();
+      }
+    };
+    const sendData = data => { pendingOutput.push(data); if (!outputImmediate) outputImmediate = setImmediate(flushOutput); };
+    session.flushOutput = flushOutput;
+    if (c.auth === 'password' && c.rememberPassword) {
     const password = passwords.get(c);
     if (!password) throw new Error('Saved password is missing. Edit the connection and enter it again.');
-    const send = payload => { if (!event.sender.isDestroyed()) event.sender.send('session-event', payload); };
     session.client = connectPassword(c, password, (fingerprint, done) => {
       (async () => {
         const file = path.join(app.getPath('userData'), 'trusted-hosts.json');
@@ -93,7 +143,7 @@ app.whenReady().then(async () => {
         const name = `${c.host}:${c.port}`;
         if (hosts[name] === fingerprint) { done(true); return; }
         if (hosts[name]) throw new Error('Server host key changed. Connection blocked. Verify the server with your administrator before updating trusted-hosts.json.');
-        const response = await dialog.showMessageBox(session.window, { type: 'warning', title: 'Verify SSH server', message: `Trust ${name}?`, detail: `Verify this SHA256 fingerprint with your server administrator:\n${Buffer.from(fingerprint, 'hex').toString('base64').replace(/=+$/, '')}\n\nThis is the first saved-password connection to this server.`, buttons: ['Cancel', 'Trust and connect'], defaultId: 0, cancelId: 0 });
+        const response = await dialog.showMessageBox(mainWindow, { type: 'warning', title: 'Verify SSH server', message: `Trust ${name}?`, detail: `Verify this SHA256 fingerprint with your server administrator:\n${Buffer.from(fingerprint, 'hex').toString('base64').replace(/=+$/, '')}\n\nThis is the first saved-password connection to this server.`, buttons: ['Cancel', 'Trust and connect'], defaultId: 0, cancelId: 0 });
         if (response.response !== 1) { done(false); return; }
         // Re-read after the dialog to preserve other concurrently trusted hosts.
         try { hosts = JSON.parse(await fs.readFile(file, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -101,7 +151,15 @@ app.whenReady().then(async () => {
         hosts[name] = fingerprint;
         await fs.writeFile(file, JSON.stringify(hosts, null, 2)); done(true);
       })().catch(error => { send({ type: 'error', message: error.message }); done(false); });
-    }, { ready: () => send({ type: 'ready' }), data: data => send({ type: 'data', data }), error: message => send({ type: 'error', message }), close: () => send({ type: 'close' }) });
+    }, { ready: () => send({ type: 'ready' }), data: sendData, error: message => send({ type: 'error', message }), close: () => { flushOutput(); send({ type: 'close' }); } });
+    return;
+    }
+    try {
+      session.process = pty.spawn(windowsTools().ssh, sshArgs(c), { name: 'xterm-256color', cols: 100, rows: 30, cwd: os.homedir(), env: process.env, useConpty: true });
+      session.process.onData(sendData);
+      session.process.onExit(({ exitCode }) => { flushOutput(); send({ type: 'close', exitCode }); });
+      send({ type: 'ready' });
+    } catch (error) { send({ type: 'error', message: error.message }); }
   });
   ipc.handle('pick-key', 'manager', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: 'Select SSH private key', properties: ['openFile'] });
@@ -117,33 +175,24 @@ app.whenReady().then(async () => {
   ipc.handle('connect', 'manager', async (_, id) => {
     const c = state.connections.find(c => c.id === id);
     if (!c) throw new Error('Connection no longer exists.');
-    if (c.auth === 'password' && c.rememberPassword) {
-      if (!passwords.get(c)) throw new Error('Saved password is missing. Edit the connection and enter it again.');
-      const window = new BrowserWindow({ width: 1050, height: 720, title: `${c.name} — ShellLight`, backgroundColor: '#13251e', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'session-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
-      ipc.register(window, 'terminal', applicationURL + '?terminal=1');
-      const senderId = window.webContents.id;
-      sessions.set(senderId, { window, connection: { ...c }, started: false });
-      window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-      window.webContents.on('will-navigate', e => e.preventDefault());
-      window.on('closed', () => { sessions.get(senderId)?.client?.close(); sessions.delete(senderId); });
-      await window.loadFile(path.join(__dirname, '../dist/index.html'), { query: { terminal: '1' } });
-      return { launched: true };
-    }
-    const args = sshArgs(c);
-    const plan = sshLaunchPlan(args);
+    if (c.auth === 'password' && c.rememberPassword && !passwords.get(c)) throw new Error('Saved password is missing. Edit the connection and enter it again.');
     if (c.auth === 'key') await fs.access(expandHome(c.keyPath));
-    try { await launch(plan.terminal.command, plan.terminal.args); }
-    catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-      await launch(plan.fallback.command, plan.fallback.args);
-    }
-    return { launched: true };
+    const sessionId = randomUUID();
+    sessions.set(sessionId, { owner: mainWindow.webContents.id, connection: { ...c }, started: false });
+    return { sessionId, name: c.name, environmentId: c.environmentId };
+
+  });
+  ipc.handle('open-vscode', 'manager', async (_, id) => {
+    const connection = state.connections.find(c => c.id === id);
+    if (!connection) throw new Error('Connection no longer exists.');
+    await openInVSCode(connection, app.getPath('userData'));
   });
   mainWindow = new BrowserWindow({ width: 1260, height: 840, minWidth: 940, minHeight: 640, title: 'ShellLight', backgroundColor: '#f6f8fa', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   ipc.register(mainWindow, 'manager', applicationURL);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', e => e.preventDefault());
   await mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  mainWindow.on('closed', () => { for (const session of sessions.values()) { session.client?.close(); session.process?.kill(); } sessions.clear(); });
   if (process.argv.includes('--smoke-test')) {
     try {
       const result = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -160,17 +209,12 @@ app.whenReady().then(async () => {
         const passwordBridge = withPassword.connections[0].rememberPassword && !JSON.stringify(withPassword).includes(secret);
         await window.shelllight.save(original);
         const agentStatus = await window.shelllight.agentStatus();
-        return { bridge: !!original, passwordBridge, agentBridge: typeof agentStatus.running === 'boolean' && typeof window.shelllight.unlockKey === 'function' && typeof window.shelllight.setupAgent === 'function', persistence: saved.connections[0]?.host === 'example.invalid', title: document.title, root: document.getElementById('root').textContent };
+        return { bridge: !!original, sessionBridge: typeof window.shelllight.sessionStart === 'function' && typeof window.shelllight.sessionClose === 'function', passwordBridge, agentBridge: typeof agentStatus.running === 'boolean' && typeof window.shelllight.unlockKey === 'function' && typeof window.shelllight.setupAgent === 'function', persistence: saved.connections[0]?.host === 'example.invalid', title: document.title, root: document.getElementById('root').textContent };
       })()`);
-      const terminalWindow = new BrowserWindow({ show: false, webPreferences: { preload: path.join(__dirname, 'session-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
-      ipc.register(terminalWindow, 'terminal', applicationURL + '?terminal=1');
-      await terminalWindow.loadFile(path.join(__dirname, '../dist/index.html'), { query: { terminal: '1' } });
-      result.separateBridges = await terminalWindow.webContents.executeJavaScript(`typeof window.shelllight.sessionStart === 'function' && !('save' in window.shelllight) && !('load' in window.shelllight) && !('setupAgent' in window.shelllight)`);
-      terminalWindow.destroy();
       await fs.writeFile(path.join(__dirname, '../.smoke-data/preview.png'), (await mainWindow.webContents.capturePage()).toPNG());
       console.log(JSON.stringify(result));
       const cleared = !passwords.get({ id: 'test-vm', host: 'example.invalid', port: '22', username: 'smoke-user' });
-      app.exit(result.bridge && result.separateBridges && result.passwordBridge && cleared && result.agentBridge && result.persistence && result.root.includes('Environments') ? 0 : 1);
+      app.exit(result.bridge && result.sessionBridge && result.passwordBridge && cleared && result.agentBridge && result.persistence && result.root.includes('Environments') ? 0 : 1);
     } catch (e) { console.error(e); app.exit(1); }
   }
 });

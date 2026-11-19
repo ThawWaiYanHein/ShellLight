@@ -1,25 +1,28 @@
 # ShellLight
 
-A Windows desktop SSH launcher. Create your own environments, add VMs, and open SSH sessions in Windows Terminal with one click.
+A Windows desktop SSH manager. Create your own environments, add VMs, and open SSH sessions inside ShellLight with one click.
 
 ## Run
 
-Requires Windows 10/11, Node.js 22.12+ (Node 24 recommended), and the Windows OpenSSH client. Windows Terminal is recommended; PowerShell is the fallback.
+Requires Windows 10/11, Node.js 22.12+ (Node 24 recommended), and the Windows OpenSSH client.
 
 ```powershell
 npm.cmd install
 npm.cmd start
 ```
 
+
 Create an environment, then add a connection. Choose default SSH configuration, a private key file, password authentication, or SSH agent. Username is optional; leaving it blank uses SSH defaults. A port of 22 preserves any port specified in SSH config; other values explicitly override it. Optional jump hosts support SSH aliases and `user@host:port`.
 
-Click Connect to open a terminal tab. Ordinary connections open in Windows Terminal; saved-password sessions open inside ShellLight. The connection list tracks launches, not live VM health. Several sessions can stay open at once.
+Click Connect to open a terminal tab inside the ShellLight window. Keep several sessions open and switch between their tabs; the environment list stays visible so you can move to another environment and connect there. Paste with Ctrl+V, Ctrl+Shift+V, Shift+Insert, right-click, or the Paste button. Select terminal text and press Ctrl+C or Ctrl+Shift+C, or click Copy. SSH config aliases, key passphrases, SSH agent prompts, and non-remembered passwords appear in the in-app terminal.
+
+Use the code icon on a connection to open its SSH session in a VS Code integrated terminal. ShellLight creates a local VS Code task under its app-data directory using the system OpenSSH client; no saved password is copied into it. VS Code may ask you to trust the generated workspace and allow its task the first time. Password authentication prompts in the VS Code terminal.
 
 ### Remember a VM password
 
-Choose **Password (no key required)**, check **Remember password on this computer**, enter the VM password, and save. The password is stored in Windows Credential Manager under your Windows account, separately from JSON settings. Saved-password sessions open an interactive terminal inside ShellLight. On first use, verify and accept the server fingerprint; changed host keys are blocked. Trust records are separate from OpenSSH known_hosts and live in `trusted-hosts.json` next to the connection settings.
+Choose **Password (no key required)**, check **Remember password on this computer**, enter the VM password, and save. The password is stored in Windows Credential Manager under your Windows account, separately from JSON settings. Saved-password sessions open inside ShellLight. On first use, verify and accept the server fingerprint; changed host keys are blocked. Trust records are separate from OpenSSH known_hosts and live in `trusted-hosts.json` next to the connection settings.
 
-Saved-password sessions require a direct host/IP, explicit username, and port. They do not resolve SSH config aliases or support bastions, MFA, or keyboard-interactive authentication. Uncheck Remember password and save to return to Windows Terminal authentication. Leave the password field empty when editing to keep the existing credential; type a new password to replace it. Changing host, port, or username requires entering the password again. Unchecking the option, changing authentication, or deleting the connection removes its stored credential. Duplicated connections require their own password entry. Stored passwords are never returned to the renderer, put into process arguments, or written into temporary files. Credentials stay local to your Windows account.
+Saved-password sessions require a direct host/IP, explicit username, and port. They do not resolve SSH config aliases or support bastions, MFA, or keyboard-interactive authentication. Leave the password field empty when editing to keep the existing credential; type a new password to replace it. Changing host, port, or username requires entering the password again. Unchecking the option, changing authentication, or deleting the connection removes its stored credential. Duplicated connections require their own password entry. Stored passwords are never returned to the renderer, put into process arguments, or written into temporary files. Credentials stay local to your Windows account.
 
 ### Unlock a key from the app
 
@@ -40,9 +43,9 @@ npm.cmd run smoke
 npm.cmd run package
 ```
 
-The portable Windows executable is generated in `release/shelllight-1.1.2/ShellLight 1.1.2.exe`. Double-click it to launch without Node.js. This local build is unsigned. The smoke test briefly opens the application, verifies the settings bridge and management/terminal separation, and writes isolated test settings and a screenshot under `.smoke-data/`; it never opens an SSH connection.
+The portable Windows executable is generated in `release/shelllight-1.2.4/ShellLight 1.2.4.exe`. Double-click it to launch without Node.js. This local build is unsigned. The smoke test briefly opens the application, verifies the settings bridge and session controls, and writes isolated test settings and a screenshot under `.smoke-data/`; it never opens an SSH connection.
 
-The desktop uses isolated, sandboxed renderers. Every IPC request checks the registered window, top-level frame, document URL, and permitted role. Terminal windows have a separate preload API and cannot manage connections or credentials. SSH launches use argument arrays and absolute Windows executable paths. Password fields are cleared when the editor closes or authentication settings change. See [SECURITY.md](SECURITY.md) for the dependency audit status and reporting guidance.
+The desktop uses isolated, sandboxed renderers. Every IPC request checks the registered window, top-level frame, document URL, and permitted role. Session controls are scoped to the owning app window. The local OpenSSH client runs through a pseudoterminal; saved passwords use the app's direct SSH session flow. Terminal rendering uses WebGL when available, falls back automatically when it is not, and applies output flow control to keep heavy output from overwhelming the UI. Password fields are cleared when the editor closes or authentication settings change. See [SECURITY.md](SECURITY.md) for the dependency audit status and reporting guidance.
 
 There are no preconfigured sample VMs. Environment deletion asks for confirmation and removes its saved connections; it does not affect any VMs or running SSH sessions.
 

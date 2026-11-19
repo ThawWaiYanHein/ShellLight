@@ -5,7 +5,8 @@ const { createIpcSecurity } = require('../electron/ipc-security.cjs');
 const page = 'file:///C:/ShellLight/dist/index.html';
 function fixture() {
   const handlers = new Map();
-  const ipc = createIpcSecurity({ handle: (channel, handler) => handlers.set(channel, handler) });
+  const listeners = new Map();
+  const ipc = createIpcSecurity({ handle: (channel, handler) => handlers.set(channel, handler), on: (channel, handler) => listeners.set(channel, handler) });
   const makeWindow = (id, url) => {
     const webContents = Object.assign(new EventEmitter(), { id, mainFrame: { url }, isDestroyed: () => false });
     return { webContents };
@@ -14,19 +15,22 @@ function fixture() {
   ipc.register(manager, 'manager', page); ipc.register(terminal, 'terminal', page + '?terminal=1');
   let writes = 0;
   ipc.handle('save', 'manager', () => ++writes);
-  ipc.handle('session-input', 'terminal', (_, input) => input);
+  let input = '';
+  ipc.listen('session-input', 'manager', (_, value) => { input = value; });
   const event = window => ({ sender: window.webContents, senderFrame: window.webContents.mainFrame });
-  return { handlers, manager, terminal, event, makeWindow, writes: () => writes };
+  return { handlers, listeners, manager, terminal, event, makeWindow, writes: () => writes, input: () => input };
 }
-test('registered manager and terminal can use their own IPC channels', () => {
+test('registered manager can use its manager IPC channels', () => {
   const f = fixture();
   assert.equal(f.handlers.get('save')(f.event(f.manager)), 1);
-  assert.equal(f.handlers.get('session-input')(f.event(f.terminal), 'ls\r'), 'ls\r');
+  f.listeners.get('session-input')(f.event(f.manager), 'ls\r');
+  assert.equal(f.input(), 'ls\r');
 });
-test('terminal cannot manage settings; manager cannot control a terminal', () => {
+test('terminal-role windows cannot manage settings or send session input', () => {
   const f = fixture();
   assert.throws(() => f.handlers.get('save')(f.event(f.terminal)), /denied/);
-  assert.throws(() => f.handlers.get('session-input')(f.event(f.manager), 'rm'), /denied/);
+  f.listeners.get('session-input')(f.event(f.terminal), 'rm');
+  assert.equal(f.input(), '');
   assert.equal(f.writes(), 0);
 });
 test('unregistered windows and spoofed webContents IDs cannot use IPC', () => {
